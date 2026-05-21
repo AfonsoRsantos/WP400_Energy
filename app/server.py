@@ -17,26 +17,37 @@ MODBUS_HOST = os.environ.get('MODBUS_HOST', '192.168.1.100')
 MODBUS_PORT = int(os.environ.get('MODBUS_PORT', 502))
 MODBUS_UNIT_ID = int(os.environ.get('MODBUS_UNIT_ID', 1))
 POLL_INTERVAL = float(os.environ.get('POLL_INTERVAL', 2.0))
+ENERGY_COST_PER_KWH = float(os.environ.get('ENERGY_COST_PER_KWH', 0.36))
 
-MAX_HISTORY = 300  # ~10 min at 2s interval
+MAX_HISTORY = 300
 
 latest_data = {}
 history = deque(maxlen=MAX_HISTORY)
+daily_energy = {}  # date_str -> Wh accumulated
 lock = threading.Lock()
 connection_status = {"connected": False, "last_error": "", "last_success": None}
 
 
 def poller():
+    last_time = None
     while True:
         try:
+            now = time.time()
             data = read_all_data(MODBUS_HOST, MODBUS_PORT, MODBUS_UNIT_ID)
             if data:
                 with lock:
+                    if last_time is not None:
+                        dt = now - last_time
+                        power_w = latest_data.get('potencia_ativa') or 0
+                        energy_wh = power_w * dt / 3600.0
+                        day = time.strftime('%d.%m.%y', time.localtime(now))
+                        daily_energy[day] = daily_energy.get(day, 0) + energy_wh
                     latest_data.update(data)
                     history.append(dict(data))
                     connection_status["connected"] = True
-                    connection_status["last_success"] = time.time()
+                    connection_status["last_success"] = now
                     connection_status["last_error"] = ""
+                last_time = now
                 logger.info(f"Data read OK — V_L1={data.get('tensao_L1')}V I_L1={data.get('corrente_L1')}A")
             else:
                 with lock:
@@ -57,7 +68,8 @@ def index():
         modbus_host=MODBUS_HOST,
         modbus_port=MODBUS_PORT,
         unit_id=MODBUS_UNIT_ID,
-        poll_interval=POLL_INTERVAL)
+        poll_interval=POLL_INTERVAL,
+        energy_cost=ENERGY_COST_PER_KWH)
 
 
 @app.route('/api/data')
@@ -76,6 +88,21 @@ def api_history():
     return jsonify({"history": data})
 
 
+@app.route('/api/daily')
+def api_daily():
+    with lock:
+        cost = ENERGY_COST_PER_KWH
+        result = []
+        for day in sorted(daily_energy.keys(), reverse=True)[:7]:
+            wh = daily_energy[day]
+            result.append({
+                'date': day,
+                'wh': round(wh, 1),
+                'cost': round((wh / 1000.0) * cost, 3)
+            })
+    return jsonify({'daily': result, 'cost_per_kwh': cost})
+
+
 @app.route('/api/status')
 def api_status():
     with lock:
@@ -84,7 +111,7 @@ def api_status():
 
 @app.route('/api/config', methods=['GET', 'POST'])
 def api_config():
-    global MODBUS_HOST, MODBUS_PORT, MODBUS_UNIT_ID, POLL_INTERVAL
+    global MODBUS_HOST, MODBUS_PORT, MODBUS_UNIT_ID, POLL_INTERVAL, ENERGY_COST_PER_KWH
     if request.method == 'POST':
         body = request.get_json(force=True) or {}
         if 'host' in body:
@@ -95,10 +122,14 @@ def api_config():
             MODBUS_UNIT_ID = int(body['unit_id'])
         if 'poll_interval' in body:
             POLL_INTERVAL = float(body['poll_interval'])
-        return jsonify({"ok": True, "host": MODBUS_HOST, "port": MODBUS_PORT,
-                        "unit_id": MODBUS_UNIT_ID, "poll_interval": POLL_INTERVAL})
-    return jsonify({"host": MODBUS_HOST, "port": MODBUS_PORT,
-                    "unit_id": MODBUS_UNIT_ID, "poll_interval": POLL_INTERVAL})
+        if 'cost_per_kwh' in body:
+            ENERGY_COST_PER_KWH = float(body['cost_per_kwh'])
+        return jsonify({"ok": True})
+    return jsonify({
+        "host": MODBUS_HOST, "port": MODBUS_PORT,
+        "unit_id": MODBUS_UNIT_ID, "poll_interval": POLL_INTERVAL,
+        "cost_per_kwh": ENERGY_COST_PER_KWH
+    })
 
 
 if __name__ == '__main__':
