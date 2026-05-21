@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  energy-monitor:
+    image: energy-monitor:latest
+    container_name: energy-monitor
+    restart: unless-stopped
+    ports:
+      - "8080:5000"        # acesso: http://<IP_IHM>:8080
+    environment:
+      - MODBUS_HOST=192.168.1.100    # ← IP do seu multimedidor
+      - MODBUS_PORT=502
+      - MODBUS_UNIT_ID=1
+      - POLL_INTERVAL=2.0            # intervalo de leitura em segundos
+    network_mode: bridge

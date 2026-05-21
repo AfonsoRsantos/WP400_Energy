@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Monitor de Energia — Wago 762-3405</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg:        #0a0e14;
+    --bg2:       #0e1520;
+    --bg3:       #131c2b;
+    --panel:     #111827;
+    --border:    #1e3a5f;
+    --accent:    #00d4ff;
+    --accent2:   #ff6b35;
+    --accent3:   #39ff14;
+    --warn:      #ffd700;
+    --danger:    #ff3333;
+    --text:      #cdd6f4;
+    --muted:     #6b7a99;
+    --phase-a:   #00d4ff;
+    --phase-b:   #ff6b35;
+    --phase-c:   #39ff14;
+    --font-mono: 'Share Tech Mono', monospace;
+    --font-ui:   'Rajdhani', sans-serif;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-ui);
+    font-size: 15px;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Grid scanlines effect */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,212,255,0.015) 2px, rgba(0,212,255,0.015) 4px);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ── HEADER ── */
+  header {
+    position: sticky; top: 0; z-index: 100;
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    display: flex; align-items: center; gap: 20px;
+    height: 56px;
+    box-shadow: 0 2px 20px rgba(0,0,0,.6);
+  }
+  .logo-mark {
+    width: 32px; height: 32px;
+    background: var(--accent);
+    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    flex-shrink: 0;
+    animation: pulse-logo 3s ease-in-out infinite;
+  }
+  @keyframes pulse-logo {
+    0%,100% { opacity:1; box-shadow: 0 0 0 0 rgba(0,212,255,.4); }
+    50% { opacity:.8; }
+  }
+  header h1 {
+    font-size: 20px; font-weight: 700; letter-spacing: 3px;
+    text-transform: uppercase; color: var(--accent);
+    font-family: var(--font-ui);
+  }
+  header h1 span { color: var(--muted); font-weight: 400; }
+
+  .header-right {
+    margin-left: auto;
+    display: flex; align-items: center; gap: 16px;
+  }
+  .status-badge {
+    display: flex; align-items: center; gap: 8px;
+    padding: 5px 14px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--muted);
+    background: var(--panel);
+  }
+  .status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--danger);
+    transition: background .4s;
+  }
+  .status-dot.ok { background: var(--accent3); box-shadow: 0 0 6px var(--accent3); animation: blink 2s infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.5} }
+
+  .device-info {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--muted);
+    text-align: right;
+    line-height: 1.5;
+  }
+  .device-info b { color: var(--accent); }
+
+  /* ── LAYOUT ── */
+  main {
+    position: relative; z-index: 1;
+    padding: 20px 20px 40px;
+    max-width: 1600px;
+    margin: 0 auto;
+  }
+
+  /* ── SECTION TITLE ── */
+  .section-label {
+    font-size: 11px; letter-spacing: 4px; text-transform: uppercase;
+    color: var(--accent); font-family: var(--font-mono);
+    margin-bottom: 10px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .section-label::after {
+    content: ''; flex: 1; height: 1px;
+    background: linear-gradient(90deg, var(--border), transparent);
+  }
+
+  /* ── KPI CARDS ── */
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .kpi-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-top: 2px solid var(--accent);
+    padding: 14px 16px;
+    border-radius: 6px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color .2s, transform .15s;
+    cursor: default;
+  }
+  .kpi-card:hover { transform: translateY(-2px); border-color: var(--accent); }
+  .kpi-card::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--card-color, var(--accent));
+  }
+  .kpi-card .label {
+    font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 8px; font-family: var(--font-mono);
+  }
+  .kpi-card .value {
+    font-size: 28px; font-weight: 700; font-family: var(--font-mono);
+    color: var(--card-color, var(--accent));
+    line-height: 1; transition: color .3s;
+  }
+  .kpi-card .unit {
+    font-size: 12px; color: var(--muted); margin-top: 4px;
+    font-family: var(--font-mono);
+  }
+  .kpi-card .icon {
+    position: absolute; right: 12px; top: 12px;
+    font-size: 22px; opacity: .15;
+  }
+  .kpi-card.phase-a { --card-color: var(--phase-a); border-top-color: var(--phase-a); }
+  .kpi-card.phase-b { --card-color: var(--phase-b); border-top-color: var(--phase-b); }
+  .kpi-card.phase-c { --card-color: var(--phase-c); border-top-color: var(--phase-c); }
+  .kpi-card.power   { --card-color: var(--warn);    border-top-color: var(--warn); }
+  .kpi-card.freq    { --card-color: #c77dff;        border-top-color: #c77dff; }
+
+  /* ── CHART PANELS ── */
+  .charts-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  @media (max-width: 900px) { .charts-grid { grid-template-columns: 1fr; } }
+
+  .chart-panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px;
+    position: relative;
+  }
+  .chart-panel.wide { grid-column: 1 / -1; }
+
+  .chart-title {
+    font-size: 12px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 14px; font-family: var(--font-mono);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .chart-title span { color: var(--accent); }
+  canvas { display: block; }
+
+  /* ── POWER TRIANGLE ── */
+  .triangle-wrap {
+    display: flex; align-items: center; justify-content: center;
+    gap: 32px; flex-wrap: wrap;
+    padding: 8px 0;
+  }
+  .power-stat {
+    text-align: center;
+  }
+  .power-stat .ps-label {
+    font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 4px; font-family: var(--font-mono);
+  }
+  .power-stat .ps-value {
+    font-size: 32px; font-weight: 700; font-family: var(--font-mono);
+  }
+  .power-stat .ps-unit {
+    font-size: 12px; color: var(--muted); font-family: var(--font-mono);
+  }
+  .ps-ativa  { color: var(--accent3); }
+  .ps-reativa { color: var(--accent2); }
+  .ps-aparente { color: var(--warn); }
+
+  /* ── FP GAUGES ── */
+  .fp-grid {
+    display: grid; grid-template-columns: repeat(3,1fr); gap: 16px;
+  }
+  .fp-gauge {
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+  }
+  .fp-gauge canvas { width: 100%; max-width: 160px; }
+  .fp-label {
+    font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--muted); font-family: var(--font-mono);
+  }
+  .fp-value {
+    font-size: 24px; font-weight: 700; font-family: var(--font-mono);
+  }
+
+  /* ── TABLE ── */
+  .data-table {
+    width: 100%; border-collapse: collapse;
+    font-family: var(--font-mono); font-size: 13px;
+  }
+  .data-table th {
+    text-align: left; padding: 8px 12px;
+    font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--muted); border-bottom: 1px solid var(--border);
+  }
+  .data-table td {
+    padding: 9px 12px; border-bottom: 1px solid rgba(30,58,95,.4);
+    color: var(--text);
+  }
+  .data-table tr:last-child td { border-bottom: none; }
+  .data-table tr:hover td { background: rgba(0,212,255,.04); }
+  .val-cell { color: var(--accent); font-weight: 600; font-size: 15px; }
+
+  /* ── CONFIG PANEL ── */
+  .config-toggle {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--panel); border: 1px solid var(--border);
+    color: var(--text); font-family: var(--font-ui); font-size: 14px; font-weight: 600;
+    padding: 8px 16px; border-radius: 4px; cursor: pointer;
+    letter-spacing: 1px; text-transform: uppercase;
+    transition: border-color .2s, color .2s;
+  }
+  .config-toggle:hover { border-color: var(--accent); color: var(--accent); }
+
+  .config-panel {
+    background: var(--bg3); border: 1px solid var(--border);
+    border-radius: 6px; padding: 20px;
+    margin-top: 20px; display: none;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 14px;
+  }
+  .config-panel.open { display: grid; }
+  .cfg-group label {
+    display: block; font-size: 10px; letter-spacing: 2px;
+    text-transform: uppercase; color: var(--muted);
+    margin-bottom: 5px; font-family: var(--font-mono);
+  }
+  .cfg-group input {
+    width: 100%; background: var(--panel); border: 1px solid var(--border);
+    color: var(--text); font-family: var(--font-mono); font-size: 14px;
+    padding: 8px 10px; border-radius: 4px; outline: none;
+  }
+  .cfg-group input:focus { border-color: var(--accent); }
+  .cfg-btn {
+    background: var(--accent); color: var(--bg);
+    font-family: var(--font-ui); font-weight: 700;
+    font-size: 14px; letter-spacing: 1px; text-transform: uppercase;
+    border: none; padding: 10px 20px; border-radius: 4px;
+    cursor: pointer; align-self: flex-end; height: 40px;
+  }
+  .cfg-btn:hover { opacity: .85; }
+
+  /* ── FOOTER ── */
+  footer {
+    text-align: center; padding: 20px;
+    font-family: var(--font-mono); font-size: 11px;
+    color: var(--muted); border-top: 1px solid var(--border);
+    position: relative; z-index: 1;
+  }
+  .update-counter {
+    font-family: var(--font-mono); font-size: 11px;
+    color: var(--muted);
+  }
+
+  /* fade-in */
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  .kpi-card { animation: fadeIn .4s ease both; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo-mark"></div>
+  <h1>ENERGY MONITOR <span>// WAGO 762-3405</span></h1>
+  <div class="header-right">
+    <div class="status-badge">
+      <div class="status-dot" id="statusDot"></div>
+      <span id="statusText">AGUARDANDO...</span>
+    </div>
+    <div class="device-info">
+      <div>HOST <b id="cfgHostDisp">{{ modbus_host }}</b>:<b>{{ modbus_port }}</b></div>
+      <div>UNIT ID <b>{{ unit_id }}</b> · POLL <b>{{ poll_interval }}s</b></div>
+    </div>
+    <div class="update-counter">UPD <span id="updateCount">0</span></div>
+  </div>
+</header>
+
+<main>
+
+  <!-- ── TENSÕES ── -->
+  <div class="section-label">⚡ Tensão de Fase</div>
+  <div class="kpi-grid" style="margin-bottom:24px;">
+    <div class="kpi-card phase-a" style="animation-delay:.05s">
+      <div class="icon">⚡</div>
+      <div class="label">Tensão L1</div>
+      <div class="value" id="kpi_tensao_L1">—</div>
+      <div class="unit">Volts (V)</div>
+    </div>
+    <div class="kpi-card phase-b" style="animation-delay:.10s">
+      <div class="icon">⚡</div>
+      <div class="label">Tensão L2</div>
+      <div class="value" id="kpi_tensao_L2">—</div>
+      <div class="unit">Volts (V)</div>
+    </div>
+    <div class="kpi-card phase-c" style="animation-delay:.15s">
+      <div class="icon">⚡</div>
+      <div class="label">Tensão L3</div>
+      <div class="value" id="kpi_tensao_L3">—</div>
+      <div class="unit">Volts (V)</div>
+    </div>
+    <div class="kpi-card freq" style="animation-delay:.20s">
+      <div class="icon">〜</div>
+      <div class="label">Frequência</div>
+      <div class="value" id="kpi_frequencia">—</div>
+      <div class="unit">Hertz (Hz)</div>
+    </div>
+  </div>
+
+  <!-- ── CORRENTES ── -->
+  <div class="section-label">⊕ Corrente de Fase</div>
+  <div class="kpi-grid" style="margin-bottom:24px;">
+    <div class="kpi-card phase-a" style="animation-delay:.05s">
+      <div class="icon">∿</div>
+      <div class="label">Corrente L1</div>
+      <div class="value" id="kpi_corrente_L1">—</div>
+      <div class="unit">Ampères (A)</div>
+    </div>
+    <div class="kpi-card phase-b" style="animation-delay:.10s">
+      <div class="icon">∿</div>
+      <div class="label">Corrente L2</div>
+      <div class="value" id="kpi_corrente_L2">—</div>
+      <div class="unit">Ampères (A)</div>
+    </div>
+    <div class="kpi-card phase-c" style="animation-delay:.15s">
+      <div class="icon">∿</div>
+      <div class="label">Corrente L3</div>
+      <div class="value" id="kpi_corrente_L3">—</div>
+      <div class="unit">Ampères (A)</div>
+    </div>
+  </div>
+
+  <!-- ── POTÊNCIA ── -->
+  <div class="section-label">◈ Potência</div>
+  <div class="chart-panel" style="margin-bottom:24px;">
+    <div class="triangle-wrap">
+      <div class="power-stat">
+        <div class="ps-label">Potência Ativa</div>
+        <div class="ps-value ps-ativa" id="kpi_potencia_ativa">—</div>
+        <div class="ps-unit">kW</div>
+      </div>
+      <div style="font-size:32px;color:var(--border)">+</div>
+      <div class="power-stat">
+        <div class="ps-label">Potência Reativa</div>
+        <div class="ps-value ps-reativa" id="kpi_potencia_reativa">—</div>
+        <div class="ps-unit">kVAr</div>
+      </div>
+      <div style="font-size:32px;color:var(--border)">=</div>
+      <div class="power-stat">
+        <div class="ps-label">Potência Aparente</div>
+        <div class="ps-value ps-aparente" id="kpi_potencia_aparente">—</div>
+        <div class="ps-unit">kVA</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── CHARTS ── -->
+  <div class="section-label">◎ Análise Temporal</div>
+  <div class="charts-grid" style="margin-bottom:24px;">
+    <div class="chart-panel">
+      <div class="chart-title">TENSÃO POR FASE <span id="lblV">V</span></div>
+      <canvas id="chartVoltage" height="200"></canvas>
+    </div>
+    <div class="chart-panel">
+      <div class="chart-title">CORRENTE POR FASE <span id="lblA">A</span></div>
+      <canvas id="chartCurrent" height="200"></canvas>
+    </div>
+    <div class="chart-panel">
+      <div class="chart-title">POTÊNCIA ATIVA / APARENTE</div>
+      <canvas id="chartPower" height="200"></canvas>
+    </div>
+    <div class="chart-panel">
+      <div class="chart-title">FREQUÊNCIA</div>
+      <canvas id="chartFreq" height="200"></canvas>
+    </div>
+  </div>
+
+  <!-- ── FATOR DE POTÊNCIA ── -->
+  <div class="section-label">◇ Fator de Potência por Fase</div>
+  <div class="charts-grid" style="margin-bottom:24px;">
+    <div class="chart-panel">
+      <div class="chart-title">FATOR DE POTÊNCIA (HISTÓRICO)</div>
+      <canvas id="chartFP" height="200"></canvas>
+    </div>
+    <div class="chart-panel">
+      <div class="chart-title">FP INSTANTÂNEO</div>
+      <div class="fp-grid" style="padding-top:10px;">
+        <div class="fp-gauge">
+          <canvas id="gaugeFP1" height="140"></canvas>
+          <div class="fp-label">Fase L1</div>
+          <div class="fp-value" id="fpVal1" style="color:var(--phase-a)">—</div>
+        </div>
+        <div class="fp-gauge">
+          <canvas id="gaugeFP2" height="140"></canvas>
+          <div class="fp-label">Fase L2</div>
+          <div class="fp-value" id="fpVal2" style="color:var(--phase-b)">—</div>
+        </div>
+        <div class="fp-gauge">
+          <canvas id="gaugeFP3" height="140"></canvas>
+          <div class="fp-label">Fase L3</div>
+          <div class="fp-value" id="fpVal3" style="color:var(--phase-c)">—</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── TABLE ── -->
+  <div class="section-label">≡ Tabela de Medições</div>
+  <div class="chart-panel" style="margin-bottom:24px; overflow-x:auto;">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Grandeza</th>
+          <th>L1 / Total</th>
+          <th>L2</th>
+          <th>L3</th>
+          <th>Unidade</th>
+          <th>Endereço Modbus</th>
+        </tr>
+      </thead>
+      <tbody id="dataTableBody">
+        <tr><td colspan="6" style="color:var(--muted);padding:20px;text-align:center;font-family:var(--font-mono)">Aguardando dados...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ── CONFIG ── -->
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
+    <div class="section-label" style="margin:0;flex:1">⚙ Configuração</div>
+    <button class="config-toggle" onclick="toggleConfig()">▼ CONFIGURAR</button>
+  </div>
+  <div class="config-panel" id="configPanel">
+    <div class="cfg-group">
+      <label>IP do Medidor</label>
+      <input type="text" id="cfgHost" value="{{ modbus_host }}" placeholder="192.168.1.100"/>
+    </div>
+    <div class="cfg-group">
+      <label>Porta Modbus</label>
+      <input type="number" id="cfgPort" value="{{ modbus_port }}" placeholder="502"/>
+    </div>
+    <div class="cfg-group">
+      <label>Unit ID</label>
+      <input type="number" id="cfgUnit" value="{{ unit_id }}" placeholder="1"/>
+    </div>
+    <div class="cfg-group">
+      <label>Intervalo (s)</label>
+      <input type="number" id="cfgPoll" value="{{ poll_interval }}" step="0.5" min="0.5"/>
+    </div>
+    <div class="cfg-group">
+      <button class="cfg-btn" onclick="saveConfig()">SALVAR</button>
+    </div>
+  </div>
+
+</main>
+
+<footer>
+  WAGO 762-3405 · Modbus TCP FC3 · Unit ID {{ unit_id }} &nbsp;|&nbsp;
+  Monitor de Energia Industrial &nbsp;|&nbsp; last update: <span id="lastUpdateTime">—</span>
+</footer>
+
+<script>
+// ── Chart defaults ──
+Chart.defaults.color = '#6b7a99';
+Chart.defaults.borderColor = 'rgba(30,58,95,.5)';
+Chart.defaults.font.family = "'Share Tech Mono', monospace";
+Chart.defaults.font.size = 11;
+
+const HIST = 60;
+const timeLabels = [];
+const datasets = {
+  vL1:[],vL2:[],vL3:[],
+  iL1:[],iL2:[],iL3:[],
+  pa:[],pap:[],
+  freq:[],
+  fp1:[],fp2:[],fp3:[]
+};
+
+function mkLine(canvas, label1, c1, label2, c2, label3, c3) {
+  return new Chart(canvas, {
+    type:'line',
+    data:{
+      labels:timeLabels,
+      datasets:[
+        {label:label1, data:datasets[c1], borderColor:'var(--phase-a)', borderWidth:2, pointRadius:0, tension:.3, fill:false},
+        {label:label2, data:datasets[c2], borderColor:'var(--phase-b)', borderWidth:2, pointRadius:0, tension:.3, fill:false},
+        ...(label3 ? [{label:label3, data:datasets[c3], borderColor:'var(--phase-c)', borderWidth:2, pointRadius:0, tension:.3, fill:false}] : [])
+      ]
+    },
+    options:{
+      animation:false, responsive:true, maintainAspectRatio:false,
+      interaction:{mode:'index', intersect:false},
+      plugins:{legend:{position:'top', labels:{boxWidth:10, padding:10}}},
+      scales:{
+        x:{ticks:{maxTicksLimit:6}, grid:{color:'rgba(30,58,95,.4)'}},
+        y:{grid:{color:'rgba(30,58,95,.4)'}, ticks:{maxTicksLimit:5}}
+      }
+    }
+  });
+}
+
+const chartVoltage = mkLine(document.getElementById('chartVoltage'), 'L1','vL1','L2','vL2','L3','vL3');
+const chartCurrent = mkLine(document.getElementById('chartCurrent'), 'L1','iL1','L2','iL2','L3','iL3');
+
+const chartPower = new Chart(document.getElementById('chartPower'), {
+  type:'line',
+  data:{
+    labels:timeLabels,
+    datasets:[
+      {label:'Ativa (kW)',   data:datasets.pa,  borderColor:'var(--accent3)', borderWidth:2, pointRadius:0, tension:.3, fill:false},
+      {label:'Aparente (kVA)',data:datasets.pap, borderColor:'var(--warn)',   borderWidth:2, pointRadius:0, tension:.3, fill:false},
+    ]
+  },
+  options:{animation:false, responsive:true, maintainAspectRatio:false,
+    interaction:{mode:'index',intersect:false},
+    plugins:{legend:{position:'top',labels:{boxWidth:10,padding:10}}},
+    scales:{x:{ticks:{maxTicksLimit:6},grid:{color:'rgba(30,58,95,.4)'}},
+            y:{grid:{color:'rgba(30,58,95,.4)'},ticks:{maxTicksLimit:5}}}
+  }
+});
+
+const chartFreq = new Chart(document.getElementById('chartFreq'), {
+  type:'line',
+  data:{labels:timeLabels, datasets:[
+    {label:'Hz', data:datasets.freq, borderColor:'#c77dff', borderWidth:2, pointRadius:0, tension:.3, fill:{target:'origin', above:'rgba(199,125,255,.06)'}}
+  ]},
+  options:{animation:false, responsive:true, maintainAspectRatio:false,
+    plugins:{legend:{display:false}},
+    scales:{x:{ticks:{maxTicksLimit:6},grid:{color:'rgba(30,58,95,.4)'}},
+            y:{grid:{color:'rgba(30,58,95,.4)'},ticks:{maxTicksLimit:5}, min:55, max:65}}
+  }
+});
+
+const chartFP = new Chart(document.getElementById('chartFP'), {
+  type:'line',
+  data:{labels:timeLabels, datasets:[
+    {label:'FP L1', data:datasets.fp1, borderColor:'var(--phase-a)', borderWidth:2, pointRadius:0, tension:.3, fill:false},
+    {label:'FP L2', data:datasets.fp2, borderColor:'var(--phase-b)', borderWidth:2, pointRadius:0, tension:.3, fill:false},
+    {label:'FP L3', data:datasets.fp3, borderColor:'var(--phase-c)', borderWidth:2, pointRadius:0, tension:.3, fill:false},
+  ]},
+  options:{animation:false, responsive:true, maintainAspectRatio:false,
+    interaction:{mode:'index',intersect:false},
+    plugins:{legend:{position:'top',labels:{boxWidth:10,padding:10}}},
+    scales:{x:{ticks:{maxTicksLimit:6},grid:{color:'rgba(30,58,95,.4)'}},
+            y:{grid:{color:'rgba(30,58,95,.4)'},min:0,max:1,ticks:{maxTicksLimit:5}}}
+  }
+});
+
+// ── Gauge charts ──
+function mkGauge(canvasId, color) {
+  return new Chart(document.getElementById(canvasId), {
+    type:'doughnut',
+    data:{datasets:[{data:[0,1],backgroundColor:[color,'rgba(30,58,95,.4)'],borderWidth:0,circumference:220,rotation:-110}]},
+    options:{animation:{duration:400}, responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{enabled:false}}
+    }
+  });
+}
+const g1 = mkGauge('gaugeFP1','rgba(0,212,255,.8)');
+const g2 = mkGauge('gaugeFP2','rgba(255,107,53,.8)');
+const g3 = mkGauge('gaugeFP3','rgba(57,255,20,.8)');
+
+function updateGauge(g, val) {
+  const v = Math.min(Math.max(parseFloat(val)||0, 0), 1);
+  g.data.datasets[0].data = [v, 1 - v];
+  g.update();
+}
+
+// ── Helpers ──
+let updateCount = 0;
+const fmt = (v, d=1) => v !== null && v !== undefined ? Number(v).toFixed(d) : '—';
+const ts = () => { const n=new Date(); return n.toLocaleTimeString('pt-BR'); }
+
+function setKpi(id, value, decimals=1) {
+  const el = document.getElementById('kpi_' + id);
+  if (el) el.textContent = fmt(value, decimals);
+}
+
+// ── Data fetch ──
+async function fetchData() {
+  try {
+    const r = await fetch('/api/data');
+    if (!r.ok) return;
+    const j = await r.json();
+    const d = j.data;
+    const ok = j.status?.connected;
+
+    document.getElementById('statusDot').className = 'status-dot' + (ok ? ' ok':'');
+    document.getElementById('statusText').textContent = ok ? 'CONECTADO' : 'DESCONECTADO';
+
+    if (!d) return;
+    updateCount++;
+    document.getElementById('updateCount').textContent = updateCount;
+    document.getElementById('lastUpdateTime').textContent = ts();
+
+    // KPIs
+    setKpi('tensao_L1', d.tensao_L1);
+    setKpi('tensao_L2', d.tensao_L2);
+    setKpi('tensao_L3', d.tensao_L3);
+    setKpi('corrente_L1', d.corrente_L1);
+    setKpi('corrente_L2', d.corrente_L2);
+    setKpi('corrente_L3', d.corrente_L3);
+    setKpi('frequencia', d.frequencia, 2);
+    setKpi('potencia_ativa', d.potencia_ativa);
+    setKpi('potencia_reativa', d.potencia_reativa);
+    setKpi('potencia_aparente', d.potencia_aparente);
+
+    // FP instant
+    document.getElementById('fpVal1').textContent = fmt(d.fp_L1, 3);
+    document.getElementById('fpVal2').textContent = fmt(d.fp_L2, 3);
+    document.getElementById('fpVal3').textContent = fmt(d.fp_L3, 3);
+    updateGauge(g1, d.fp_L1);
+    updateGauge(g2, d.fp_L2);
+    updateGauge(g3, d.fp_L3);
+
+    // Table
+    document.getElementById('dataTableBody').innerHTML = `
+      <tr><td>Tensão</td><td class="val-cell">${fmt(d.tensao_L1)} V</td><td class="val-cell">${fmt(d.tensao_L2)} V</td><td class="val-cell">${fmt(d.tensao_L3)} V</td><td>V</td><td>5 / 6 / 7</td></tr>
+      <tr><td>Corrente</td><td class="val-cell">${fmt(d.corrente_L1)} A</td><td class="val-cell">${fmt(d.corrente_L2)} A</td><td class="val-cell">${fmt(d.corrente_L3)} A</td><td>A</td><td>2 / 3 / 4</td></tr>
+      <tr><td>Fator de Potência</td><td class="val-cell">${fmt(d.fp_L1,3)}</td><td class="val-cell">${fmt(d.fp_L2,3)}</td><td class="val-cell">${fmt(d.fp_L3,3)}</td><td>—</td><td>12 / 13 / 14</td></tr>
+      <tr><td>Potência Ativa Total</td><td class="val-cell" colspan="2">${fmt(d.potencia_ativa)} kW</td><td>—</td><td>kW</td><td>8</td></tr>
+      <tr><td>Potência Reativa Total</td><td class="val-cell" colspan="2">${fmt(d.potencia_reativa)} kVAr</td><td>—</td><td>kVAr</td><td>9</td></tr>
+      <tr><td>Potência Aparente Total</td><td class="val-cell" colspan="2">${fmt(d.potencia_aparente)} kVA</td><td>—</td><td>kVA</td><td>10</td></tr>
+      <tr><td>Frequência</td><td class="val-cell" colspan="2">${fmt(d.frequencia,2)} Hz</td><td>—</td><td>Hz</td><td>11</td></tr>
+    `;
+
+  } catch(e) {
+    document.getElementById('statusDot').className = 'status-dot';
+    document.getElementById('statusText').textContent = 'ERRO';
+  }
+}
+
+// ── History fetch ──
+async function fetchHistory() {
+  try {
+    const r = await fetch('/api/history?points=' + HIST);
+    const j = await r.json();
+    const hist = j.history || [];
+
+    timeLabels.length = 0;
+    Object.values(datasets).forEach(a => a.length = 0);
+
+    hist.forEach(d => {
+      const t = new Date(d.timestamp * 1000);
+      timeLabels.push(t.toLocaleTimeString('pt-BR'));
+      datasets.vL1.push(d.tensao_L1);
+      datasets.vL2.push(d.tensao_L2);
+      datasets.vL3.push(d.tensao_L3);
+      datasets.iL1.push(d.corrente_L1);
+      datasets.iL2.push(d.corrente_L2);
+      datasets.iL3.push(d.corrente_L3);
+      datasets.pa.push(d.potencia_ativa);
+      datasets.pap.push(d.potencia_aparente);
+      datasets.freq.push(d.frequencia);
+      datasets.fp1.push(d.fp_L1);
+      datasets.fp2.push(d.fp_L2);
+      datasets.fp3.push(d.fp_L3);
+    });
+
+    [chartVoltage, chartCurrent, chartPower, chartFreq, chartFP].forEach(c => c.update());
+  } catch(e){}
+}
+
+// ── Config ──
+function toggleConfig() {
+  document.getElementById('configPanel').classList.toggle('open');
+}
+async function saveConfig() {
+  const body = {
+    host: document.getElementById('cfgHost').value,
+    port: parseInt(document.getElementById('cfgPort').value),
+    unit_id: parseInt(document.getElementById('cfgUnit').value),
+    poll_interval: parseFloat(document.getElementById('cfgPoll').value)
+  };
+  const r = await fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+  if (r.ok) {
+    document.getElementById('cfgHostDisp').textContent = body.host;
+    alert('Configuração salva! O servidor atualizará na próxima leitura.');
+  }
+}
+
+// ── Polling ──
+fetchData();
+fetchHistory();
+setInterval(fetchData, 2000);
+setInterval(fetchHistory, 6000);
+</script>
+</body>
+</html>
